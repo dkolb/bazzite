@@ -1,34 +1,5 @@
 name: Build Bazzite
 on:
-  schedule:
-    - cron: "40 4 * * 1" # 4:40 utc monday
-  pull_request:
-    branches:
-      - testing
-      - unstable
-    paths-ignore:
-      - "**.md"
-      - "**.txt"
-      - "installer/**"
-      - "repo_content/**"
-      - "spec_files/**"
-      - "post_install_files/**"
-      - "press_kit/**"
-      - "docs/**"
-      - ".github/workflows/build_iso.yml"
-  push:
-    branches:
-      - testing
-      - unstable
-    paths-ignore:
-      - "**.md"
-      - "**.txt"
-      - "repo_content/**"
-      - "spec_files/**"
-      - "post_install_files/**"
-      - "press_kit/**"
-      - ".github/workflows/build_iso.yml"
-  merge_group:
   workflow_dispatch:
     inputs:
       handwritten:
@@ -60,10 +31,10 @@ jobs:
       fail-fast: false
       matrix:
         base_image_flavor: [main]
-        base_name: [bazzite, bazzite-deck, bazzite-nvidia]
-        base_image_name: [kinoite, silverblue]
-        target_image_flavor: [main, asus]
-        target_nvidia_flavor: [nvidia, nvidia-open]
+        base_name: [bazzite]
+        base_image_name: [silverblue]
+        target_image_flavor: [main]
+        target_nvidia_flavor: []
         fedora_version: [41]
         include:
           - fedora_version: 41
@@ -172,7 +143,7 @@ jobs:
             sudo podman pull ${{ env.IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
 
             # Add rechunk as well to remove this source of failure
-            sudo podman pull ghcr.io/hhd-dev/rechunk:v1.0.1
+            # sudo podman pull ghcr.io/hhd-dev/rechunk:v1.0.1
 
       - name: Get source versions
         id: labels
@@ -243,6 +214,18 @@ jobs:
             --build-arg SHA_HEAD_SHORT=${{ env.SHA_HEAD_SHORT }} \
             --build-arg VERSION_TAG=${{ steps.generate-version.outputs.tag }} \
             --build-arg VERSION_PRETTY="${{ steps.generate-version.outputs.pretty }}" \
+            --label="io.artifacthub.package.logo-url=https://raw.githubusercontent.com/ublue-os/bazzite/main/repo_content/logo.png" \
+            --label="io.artifacthub.package.readme-url=https://docs.bazzite.gg" \
+            --label="org.opencontainers.image.created=<timestamp>" \
+            --label="org.opencontainers.image.description=Bazzite is a custom image built upon Fedora Atomic Desktops that brings the best of Linux gaming to all of your devices - including your favorite handheld." \
+            --label="org.opencontainers.image.licenses=Apache-2.0" \
+            --label="org.opencontainers.image.revision=${{ github.sha }}" \
+            --label="org.opencontainers.image.source=https://github.com/ublue-os/bazzite" \
+            --label="org.opencontainers.image.title=Bazzite" \
+            --label="org.opencontainers.image.vendor=Universal Blue" \
+            --label="org.opencontainers.image.url=https://bazzite.gg" \
+            --label="org.universal-blue.pkg.kernel=<relver:kernel>" \
+            --label="org.universal-blue.pkg.gamescope=<relver:gamescope>" \
             --tag raw-img .
       
       - name: Remove auxiliary images
@@ -252,21 +235,21 @@ jobs:
           sudo podman image rm ${{ env.IMAGE_REGISTRY }}/akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
           sudo podman image rm ${{ env.IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
       
-      # Generate the previous image reference used by the Rechunker
-      - name: Generate previous reference
-        id: generate-prev-ref
-        shell: bash
-        run: |
-          if [ "${{ github.event.inputs.fresh-rechunk }}" == "true" ]; then
-            IMAGEREF=""
-          else
-            IMAGEREF="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:stable"
-          fi
+      # # Generate the previous image reference used by the Rechunker
+      # - name: Generate previous reference
+      #   id: generate-prev-ref
+      #   shell: bash
+      #   run: |
+      #     if [ "${{ github.event.inputs.fresh-rechunk }}" == "true" ]; then
+      #       IMAGEREF=""
+      #     else
+      #       IMAGEREF="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:stable"
+      #     fi
 
-          echo "ref=${IMAGEREF}" >> $GITHUB_OUTPUT
+      #     echo "ref=${IMAGEREF}" >> $GITHUB_OUTPUT
 
-          echo "Generated the following:"
-          cat $GITHUB_OUTPUT
+      #     echo "Generated the following:"
+      #     cat $GITHUB_OUTPUT
 
       - name: Check Secureboot
         shell: bash
@@ -288,28 +271,28 @@ jobs:
           sbverify --cert kernel-sign.crt vmlinuz || exit 1
           sbverify --cert akmods.crt vmlinuz || exit 1
 
-      # Reprocess raw-img using rechunker which will delete it
-      - name: Run Rechunker
-        id: rechunk
-        uses: hhd-dev/rechunk@v1.0.1
-        with:
-          rechunk: 'ghcr.io/hhd-dev/rechunk:v1.0.1'
-          ref: 'raw-img'
-          prev-ref: '${{ steps.generate-prev-ref.outputs.ref }}'
-          version: '${{ steps.generate-version.outputs.tag }}'
-          labels: |
-            io.artifacthub.package.logo-url=https://raw.githubusercontent.com/ublue-os/bazzite/main/repo_content/logo.png
-            io.artifacthub.package.readme-url=https://docs.bazzite.gg
-            org.opencontainers.image.created=<timestamp>
-            org.opencontainers.image.description=Bazzite is a custom image built upon Fedora Atomic Desktops that brings the best of Linux gaming to all of your devices - including your favorite handheld.
-            org.opencontainers.image.licenses=Apache-2.0
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.source=https://github.com/ublue-os/bazzite
-            org.opencontainers.image.title=Bazzite
-            org.opencontainers.image.vendor=Universal Blue
-            org.opencontainers.image.url=https://bazzite.gg
-            org.universal-blue.pkg.kernel=<relver:kernel>
-            org.universal-blue.pkg.gamescope=<relver:gamescope>
+      # # Reprocess raw-img using rechunker which will delete it
+      # - name: Run Rechunker
+      #   id: rechunk
+      #   uses: hhd-dev/rechunk@v1.0.1
+      #   with:
+      #     rechunk: 'ghcr.io/hhd-dev/rechunk:v1.0.1'
+      #     ref: 'raw-img'
+      #     prev-ref: '${{ steps.generate-prev-ref.outputs.ref }}'
+      #     version: '${{ steps.generate-version.outputs.tag }}'
+      #     labels: |
+      #       io.artifacthub.package.logo-url=https://raw.githubusercontent.com/ublue-os/bazzite/main/repo_content/logo.png
+      #       io.artifacthub.package.readme-url=https://docs.bazzite.gg
+      #       org.opencontainers.image.created=<timestamp>
+      #       org.opencontainers.image.description=Bazzite is a custom image built upon Fedora Atomic Desktops that brings the best of Linux gaming to all of your devices - including your favorite handheld.
+      #       org.opencontainers.image.licenses=Apache-2.0
+      #       org.opencontainers.image.revision=${{ github.sha }}
+      #       org.opencontainers.image.source=https://github.com/ublue-os/bazzite
+      #       org.opencontainers.image.title=Bazzite
+      #       org.opencontainers.image.vendor=Universal Blue
+      #       org.opencontainers.image.url=https://bazzite.gg
+      #       org.universal-blue.pkg.kernel=<relver:kernel>
+      #       org.universal-blue.pkg.gamescope=<relver:gamescope>
       
       # Generate tags after rechunker runs and checks the primary tag is not duplicated
       # If it is, rechunk will suffix it by .1, .2, etc and put it in steps.rechunk.outputs.version
@@ -318,7 +301,7 @@ jobs:
         shell: bash
         run: |
           # Common vars for generating tags
-          VERSION_TAG="${{ steps.rechunk.outputs.version }}"
+          VERSION_TAG="${{ steps.generate-version.outputs.tag }}"
           UPSTREAM_TAG="${{ env.SOURCE_IMAGE_VERSION }}"
           FEDORA_VERSION="${{ matrix.fedora_version }}"
           SHA_SHORT="${GITHUB_SHA::7}"
@@ -390,38 +373,38 @@ jobs:
           command: |
             echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io -u ${{ github.actor }} --password-stdin
             for tag in ${{ steps.generate-tags.outputs.alias_tags }}; do
-              sudo skopeo copy ${{ steps.rechunk.outputs.ref }} docker://${{ steps.registry_case.outputs.lowercase }}/${{ env.IMAGE_NAME }}:$tag
+              sudo skopeo copy raw-img docker://${{ steps.registry_case.outputs.lowercase }}/${{ env.IMAGE_NAME }}:$tag
             done
 
       - name: Get Image Digest
         id: digest
         run: |
           # Get digest for signing
-          DIGEST=$(sudo skopeo inspect --format '{{.Digest}}' ${{ steps.rechunk.outputs.ref }})
+          DIGEST=$(sudo skopeo inspect --format '{{.Digest}}' raw-img)
           echo "Digest is: $DIGEST"
           echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
 
-      - name: Sign container image
-        uses: EyeCantCU/cosign-action/sign@v0.3.0
-        if: github.event_name != 'pull_request'
-        with:
-          containers: ${{ env.IMAGE_NAME }}
-          registry-token: ${{ secrets.GITHUB_TOKEN }}
-          signing-secret: ${{ secrets.SIGNING_SECRET }}
-          tags: ${{ steps.digest.outputs.digest }}
+      # - name: Sign container image
+      #   uses: EyeCantCU/cosign-action/sign@v0.3.0
+      #   if: github.event_name != 'pull_request'
+      #   with:
+      #     containers: ${{ env.IMAGE_NAME }}
+      #     registry-token: ${{ secrets.GITHUB_TOKEN }}
+      #     signing-secret: ${{ secrets.SIGNING_SECRET }}
+      #     tags: ${{ steps.digest.outputs.digest }}
 
-  generate_release:
-    name: Generate Release
-    needs: [push-ghcr]
-    if: github.event_name != 'pull_request'
-    secrets: inherit
-    uses: ./.github/workflows/generate_release.yml
+  #generate_release:
+  #  name: Generate Release
+  #  needs: [push-ghcr]
+  #  if: github.event_name != 'pull_request'
+  #  secrets: inherit
+  #  uses: ./.github/workflows/generate_release.yml
 
-  build_iso:
-    name: Build ISO
-    needs: [push-ghcr]
-    if: github.ref_name == 'testing'
-    # Eventually would be nice for building images in PRs
-    #if: ${{ endsWith(github.event.pull_request.title, '[ISO]') }}
-    uses: ./.github/workflows/build_iso.yml
-    secrets: inherit
+  #build_iso:
+  #  name: Build ISO
+  #  needs: [push-ghcr]
+  #  if: github.ref_name == 'testing'
+  #  # Eventually would be nice for building images in PRs
+  #  #if: ${{ endsWith(github.event.pull_request.title, '[ISO]') }}
+  #  uses: ./.github/workflows/build_iso.yml
+  #  secrets: inherit
